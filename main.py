@@ -86,7 +86,6 @@ create_label(content_frame, "Your Text", 16, "bold", PRIMARY_COLOR).grid(row=0, 
 input_frame = ctk.CTkFrame(content_frame, corner_radius=15, fg_color=SECONDARY_COLOR)
 input_frame.grid(row=1, column=0, sticky="nsew", padx=(0, 15))
 
-# Enhanced input text box with improved scrolling
 text_input = ctk.CTkTextbox(
     input_frame, 
     font=ctk.CTkFont(family="Helvetica", size=14), 
@@ -94,7 +93,7 @@ text_input = ctk.CTkTextbox(
     fg_color=WHITE, 
     text_color=TEXT_COLOR,
     height=400,
-    wrap="word"  # Enable word wrapping
+    wrap="word"  
 )
 text_input.pack(fill="both", expand=True, padx=15, pady=15)
 
@@ -106,7 +105,6 @@ create_label(content_frame, "Result", 16, "bold", PRIMARY_COLOR).grid(row=0, col
 result_frame = ctk.CTkFrame(content_frame, corner_radius=15, fg_color=SECONDARY_COLOR)
 result_frame.grid(row=1, column=2, sticky="nsew", padx=(15, 0))
 
-# Enhanced result output with improved scrolling
 result_output = ctk.CTkTextbox(
     result_frame, 
     font=ctk.CTkFont(family="Helvetica", size=14), 
@@ -114,16 +112,16 @@ result_output = ctk.CTkTextbox(
     fg_color=WHITE, 
     text_color=TEXT_COLOR,
     height=400,
-    wrap="word"  # Enable word wrapping
+    wrap="word"  
 )
 result_output.pack(fill="both", expand=True, padx=15, pady=15)
-result_output.configure(state="disabled")  # Make read-only after creation
+result_output.configure(state="disabled")  
 
 button_container = ctk.CTkFrame(main_frame, corner_radius=0, fg_color=WHITE)
 button_container.pack(fill="x", pady=(0, 25))
 
 button_frame = ctk.CTkFrame(button_container, corner_radius=0, fg_color=WHITE)
-button_frame.pack(pady=(10, 0))  # This centers the inner frame
+button_frame.pack(pady=(10, 0)) 
 
 buttons = [
     ("Check Text", check_sentence, PRIMARY_COLOR),
