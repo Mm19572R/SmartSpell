@@ -54,7 +54,7 @@ app.geometry(f"1000x700+{x_position}+{y_position}")
 
 app.resizable(True, True)  
 
-PRIMARY_COLOR = "#179f89"
+PRIMARY_COLOR = "#4a9bff"
 SECONDARY_COLOR = "#e6f2ff"
 WHITE = "#ffffff"
 TEXT_COLOR = "#000000"
