@@ -27,12 +27,27 @@ def check_sentence():
     result_output.delete("0.0", "end")
 
     result = analyze_grammar(input_text)
-
-    if not result['issues']:
+    
+    # ADDITION: Filter out common words that shouldn't be flagged as spelling mistakes
+    common_words = {'hello', 'hi', 'hey', 'yes', 'no', 'okay', 'ok'}
+    filtered_issues = []
+    
+    for issue in result['issues']:
+        # Check if this is a spelling mistake issue
+        if "Possible spelling mistake in:" in issue:
+            # Extract the word from the issue message
+            word = issue.split("'")[1].lower()
+            # Skip if the word is in our common words list
+            if word in common_words:
+                continue
+        filtered_issues.append(issue)
+    
+    # Use the filtered issues instead of the original ones
+    if not filtered_issues:
         result_output.insert("0.0", "Your sentence looks good!")
     else:
         result_output.insert("0.0", "⚠ Issues detected:\n\n")
-        for issue in result['issues']:
+        for issue in filtered_issues:
             result_output.insert("end", f"• {issue}\n")
 
     result_output.configure(state="disabled")
