@@ -3,6 +3,15 @@ from tkinter import ttk, messagebox
 import customtkinter as ctk
 from grammar_check import analyze_grammar
 
+from spelling import SpellingCorrector
+
+import os
+print("Working dir:", os.getcwd())
+print("File exists:", os.path.exists("spelling_mistakes.xlsx"))
+
+
+
+
 ctk.set_appearance_mode("light")
 ctk.set_default_color_theme("blue")
 
@@ -142,5 +151,11 @@ for text, command, color in buttons:
         width=150 if text != "Clear" else 100,
         text_color=WHITE
     ).pack(side="left", padx=(0, 15) if text != "Clear" else (0, 0))
+
+
+    corrector = SpellingCorrector("spelling_mistakes.xlsx")
+text = "I recieved the adress and becuase it was importnt"
+print("Corrected:", corrector.correct_spelling(text))
+
 
 app.mainloop()
