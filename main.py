@@ -2,8 +2,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 import customtkinter as ctk
 from grammar_check import analyze_grammar
-
-from spelling import SpellingCorrector
+from spelling_corrector import SpellingCorrector
 
 import os
 print("Working dir:", os.getcwd())
