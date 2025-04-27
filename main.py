@@ -1,175 +1,134 @@
-import tkinter as tk
-from tkinter import ttk, messagebox
-import customtkinter as ctk
-from grammar_check import analyze_grammar
-from spelling_corrector import SpellingCorrector
-
 import os
+from spellchecker import SpellChecker
+from bert_corrector import BertCorrector
+import customtkinter as ctk
+from tkinter import messagebox
+
 print("Working dir:", os.getcwd())
-print("File exists:", os.path.exists("spelling_mistakes.xlsx"))
 
+# initialize BERT + SpellChecker
+bert = BertCorrector()
 
-
-
+# UI setup
 ctk.set_appearance_mode("light")
 ctk.set_default_color_theme("blue")
-
-def check_sentence():
-    input_text = text_input.get("0.0", "end").strip()
-    if not input_text:
-        messagebox.showwarning("Warning", "Please enter a sentence to check.")
-        return
-
-    from grammar_check import analyze_grammar
-
-    result_output.configure(state="normal")
-    result_output.delete("0.0", "end")
-
-    result = analyze_grammar(input_text)
-    
-    # ADDITION: Filter out common words that shouldn't be flagged as spelling mistakes
-    common_words = {'hello', 'hi', 'hey', 'yes', 'no', 'okay', 'ok'}
-    filtered_issues = []
-    
-    for issue in result['issues']:
-        # Check if this is a spelling mistake issue
-        if "Possible spelling mistake in:" in issue:
-            # Extract the word from the issue message
-            word = issue.split("'")[1].lower()
-            # Skip if the word is in our common words list
-            if word in common_words:
-                continue
-        filtered_issues.append(issue)
-    
-    # Use the filtered issues instead of the original ones
-    if not filtered_issues:
-        result_output.insert("0.0", "Your sentence looks good!")
-    else:
-        result_output.insert("0.0", "⚠ Issues detected:\n\n")
-        for issue in filtered_issues:
-            result_output.insert("end", f"• {issue}\n")
-
-    result_output.configure(state="disabled")
-
-
-
-def clear_text():
-    text_input.delete("0.0", "end")
-    
-    # Enable, clear, then disable
-    result_output.configure(state="normal")
-    result_output.delete("0.0", "end")
-    result_output.configure(state="disabled")
-
-def apply_suggestion():
-    messagebox.showinfo("SmartSpell", "Suggestion applied!")
-
 app = ctk.CTk()
 app.title("SmartSpell")
-
 app.geometry("1000x700")
+w, h = app.winfo_screenwidth(), app.winfo_screenheight()
+app.geometry(f"1000x700+{(w-1000)//2}+{(h-700)//2}")
+app.resizable(True, True)
 
-screen_width = app.winfo_screenwidth()
-screen_height = app.winfo_screenheight()
-x_position = int((screen_width / 2) - (1000 / 2))  
-y_position = int((screen_height / 2) - (700 / 2))  
-app.geometry(f"1000x700+{x_position}+{y_position}")
+# colors
+P, S, W, T = "#355c7d", "#e6f2ff", "#ffffff", "#000000"
 
-app.resizable(True, True)  
+# state
+fixed_text = ""
+suggestions = []
 
-PRIMARY_COLOR = "#355c7d"
-SECONDARY_COLOR = "#e6f2ff"
-WHITE = "#ffffff"
-TEXT_COLOR = "#000000"
+def check_text():
+    global fixed_text, suggestions
+    txt = text_input.get("0.0", "end").strip()
+    if not txt:
+        messagebox.showwarning("Warning", "Please enter text to check.")
+        return
 
-def create_label(parent, text, font_size, weight="normal", color=TEXT_COLOR):
+    result = bert.correct_text(txt)
+    fixed_text = result["corrected_text"]
+    suggestions = result["corrections"]
+
+    result_output.configure(state="normal")
+    result_output.delete("0.0", "end")
+    if not suggestions:
+        result_output.insert("0.0", "\u2705 Your sentence looks good!")
+    else:
+        result_output.insert("0.0", "\u26A0 Suggestions Detected:\n\n")
+        for s in suggestions:
+            result_output.insert("end", f"• {s['original']} → {s['suggested']}\n")
+    result_output.configure(state="disabled")
+
+def apply_suggestions():
+    if not suggestions:
+        messagebox.showinfo("SmartSpell", "No corrections to apply.")
+        return
+    text_input.delete("0.0", "end")
+    text_input.insert("0.0", fixed_text)
+    messagebox.showinfo("SmartSpell", "Corrections applied!")
+
+def clear_all():
+    global fixed_text, suggestions
+    fixed_text = ""
+    suggestions = []
+    text_input.delete("0.0", "end")
+    result_output.configure(state="normal")
+    result_output.delete("0.0", "end")
+    result_output.configure(state="disabled")
+
+def mklabel(parent, txt, size, bold=False, color=T):
     return ctk.CTkLabel(
         parent,
-        text=text,
-        font=ctk.CTkFont(family="Helvetica", size=font_size, weight=weight),
+        text=txt,
+        font=ctk.CTkFont(size=size, weight="bold" if bold else "normal"),
         text_color=color
     )
 
-main_frame = ctk.CTkFrame(app, corner_radius=0, fg_color=WHITE)
-main_frame.pack(fill="both", expand=True)
+# layout
+frame = ctk.CTkFrame(app, fg_color=W)
+frame.pack(fill="both", expand=True)
 
-header_frame = ctk.CTkFrame(main_frame, corner_radius=0, fg_color=PRIMARY_COLOR, height=70)
-header_frame.pack(fill="x")
-create_label(header_frame, "SmartSpell", 24, "bold", WHITE).pack(side="left", padx=30, pady=15)
+# header
+hdr = ctk.CTkFrame(frame, fg_color=P, height=60)
+hdr.pack(fill="x")
+mklabel(hdr, "SmartSpell", 24, True, W).pack(side="left", padx=20, pady=10)
 
-content_frame = ctk.CTkFrame(main_frame, corner_radius=0, fg_color=WHITE)
-content_frame.pack(fill="both", expand=True, padx=10, pady=25)
-content_frame.grid_columnconfigure(0, weight=1)
-content_frame.grid_columnconfigure(1, weight=0)  # Separator
-content_frame.grid_columnconfigure(2, weight=1)
-content_frame.grid_rowconfigure(1, weight=1)
+# content
+cf = ctk.CTkFrame(frame, fg_color=W)
+cf.pack(fill="both", expand=True, padx=10, pady=20)
+cf.grid_columnconfigure(0, weight=1)
+cf.grid_columnconfigure(1, weight=0)
+cf.grid_columnconfigure(2, weight=1)
+cf.grid_rowconfigure(1, weight=1)
 
-create_label(content_frame, "Your Text", 16, "bold", PRIMARY_COLOR).grid(row=0, column=0, sticky="w", padx=5, pady=(0, 15))
-
-input_frame = ctk.CTkFrame(content_frame, corner_radius=15, fg_color=SECONDARY_COLOR)
-input_frame.grid(row=1, column=0, sticky="nsew", padx=(0, 15))
-
+mklabel(cf, "Your Text", 16, True, P).grid(row=0, column=0, sticky="w")
+inp = ctk.CTkFrame(cf, fg_color=S, corner_radius=10)
+inp.grid(row=1, column=0, sticky="nsew", padx=(0,15))
 text_input = ctk.CTkTextbox(
-    input_frame, 
-    font=ctk.CTkFont(family="Helvetica", size=14), 
-    corner_radius=10, 
-    fg_color=WHITE, 
-    text_color=TEXT_COLOR,
-    height=400,
-    wrap="word"  
+    inp, corner_radius=8, fg_color=W, text_color=T,
+    font=ctk.CTkFont(size=14)
 )
-text_input.pack(fill="both", expand=True, padx=15, pady=15)
+text_input.pack(fill="both", expand=True, padx=10, pady=10)
 
-separator = ctk.CTkFrame(content_frame, width=2, fg_color=SECONDARY_COLOR)
-separator.grid(row=0, column=1, rowspan=2, sticky="ns", pady=2)
+sep = ctk.CTkFrame(cf, width=2, fg_color=S)
+sep.grid(row=0, column=1, rowspan=2, sticky="ns", pady=5)
 
-create_label(content_frame, "Result", 16, "bold", PRIMARY_COLOR).grid(row=0, column=2, sticky="w", padx=20, pady=(0, 15))
-
-result_frame = ctk.CTkFrame(content_frame, corner_radius=15, fg_color=SECONDARY_COLOR)
-result_frame.grid(row=1, column=2, sticky="nsew", padx=(15, 0))
-
+mklabel(cf, "Result", 16, True, P).grid(row=0, column=2, sticky="w")
+outf = ctk.CTkFrame(cf, fg_color=S, corner_radius=10)
+outf.grid(row=1, column=2, sticky="nsew", padx=(15,0))
 result_output = ctk.CTkTextbox(
-    result_frame, 
-    font=ctk.CTkFont(family="Helvetica", size=14), 
-    corner_radius=10, 
-    fg_color=WHITE, 
-    text_color=TEXT_COLOR,
-    height=400,
-    wrap="word"  
+    outf, corner_radius=8, fg_color=W, text_color=T,
+    font=ctk.CTkFont(size=14)
 )
-result_output.pack(fill="both", expand=True, padx=15, pady=15)
-result_output.configure(state="disabled")  
+result_output.pack(fill="both", expand=True, padx=10, pady=10)
+result_output.configure(state="disabled")
 
-button_container = ctk.CTkFrame(main_frame, corner_radius=0, fg_color=WHITE)
-button_container.pack(fill="x", pady=(0, 25))
-
-button_frame = ctk.CTkFrame(button_container, corner_radius=0, fg_color=WHITE)
-button_frame.pack(pady=(10, 0)) 
-
-buttons = [
-    ("Check Text", check_sentence, PRIMARY_COLOR),
-    ("Apply Suggestion", apply_suggestion, PRIMARY_COLOR),
-    ("Clear", clear_text, "#bbbbbb")
-]
-
-for text, command, color in buttons:
+# buttons
+btns = ctk.CTkFrame(frame, fg_color=W)
+btns.pack(fill="x", pady=(0,20))
+for label, cmd in [
+    ("Check Text", check_text),
+    ("Apply Suggestion", apply_suggestions),
+    ("Clear", clear_all)
+]:
+    clr = P if label != "Clear" else "#bbbbbb"
     ctk.CTkButton(
-        button_frame,
-        text=text,
-        command=command,
-        font=ctk.CTkFont(family="Helvetica", size=14),
+        btns,
+        text=label,
+        command=cmd,
+        fg_color=clr,
+        hover_color="#3d83d9" if clr == P else "#c0c0c0",
         corner_radius=8,
-        fg_color=color,
-        hover_color="#3d83d9" if color == PRIMARY_COLOR else "#c0c0c0",
-        height=45,
-        width=150 if text != "Clear" else 100,
-        text_color=WHITE
-    ).pack(side="left", padx=(0, 15) if text != "Clear" else (0, 0))
-
-
-    corrector = SpellingCorrector("spelling_mistakes.xlsx")
-text = "I recieved the adress and becuase it was importnt"
-print("Corrected:", corrector.correct_spelling(text))
-
+        height=40,
+        width=140
+    ).pack(side="left", padx=10)
 
 app.mainloop()
