@@ -25,13 +25,18 @@ def check_text():
 def apply_suggestions():
     orig_text = text_input.get("0.0", "end").strip()
     corrected, suggestions = correct_text(orig_text)
-    grammar_issues = [s for s in suggestions if s["type"] == "grammar"]
-    if grammar_issues:
-        messagebox.showinfo("Grammar Suggestions", "Please manually correct grammar issues.")
+    
+    # Apply all corrections (both spelling and grammar)
+    text_input.delete("0.0", "end")
+    text_input.insert("0.0", corrected)
+    
+    if any(s["type"] == "grammar" for s in suggestions):
+        messagebox.showinfo("Corrections Applied", "Spelling and grammar corrections applied!")
     else:
-        text_input.delete("0.0", "end")
-        text_input.insert("0.0", corrected)
         messagebox.showinfo("Corrections Applied", "Spelling corrections applied!")
+    
+    # Update the recent checks display
+    update_recent_checks(orig_text, corrected)
 
 def display_corrections(suggestions):
     result_output.configure(state="normal")
