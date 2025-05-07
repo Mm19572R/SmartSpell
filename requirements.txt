@@ -1,0 +1,5 @@
+spacy>=3.7.2
+customtkinter>=5.2.0
+pyspellchecker>=0.7.2
+language-tool-python>=2.7.1
+bert-corrector
