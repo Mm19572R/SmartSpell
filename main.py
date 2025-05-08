@@ -17,10 +17,8 @@ def highlight_issues(suggestions):
     for s in suggestions:
         tag = "grammar" if s["type"] == "grammar" else "spelling"
         target = s.get("original", "").strip()
-
         if not target:
             continue
-
         start = "1.0"
         while True:
             start = text_input._textbox.search(target, start, stopindex="end", nocase=True)
@@ -42,11 +40,10 @@ def display_corrections(suggestions):
     else:
         for s in suggestions:
             category = s["type"].capitalize()
-            original = str(s.get("original", "")).strip()
+            original = s.get("original", "").strip()
             suggested = s.get("suggested", "").strip()
             if not original or not suggested or original == suggested:
                 continue
-
             result_output._textbox.insert("end", f"{category} issue:\n", category.lower())
             result_output._textbox.insert("end", f"• '{original}' → '{suggested}'\n\n", category.lower())
 
@@ -64,6 +61,13 @@ def check_text():
     if not orig_text:
         messagebox.showwarning("Warning", "Please enter text.")
         return
+
+    # Reset highlights and result box
+    text_input._textbox.tag_remove("grammar", "1.0", "end")
+    text_input._textbox.tag_remove("spelling", "1.0", "end")
+    result_output.configure(state="normal")
+    result_output.delete("0.0", "end")
+    result_output.configure(state="disabled")
 
     corrected, suggestions = correct_text(orig_text)
     highlight_issues(suggestions)
