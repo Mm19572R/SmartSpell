@@ -1,267 +1,154 @@
 import re
+import spacy
 from spellchecker import SpellChecker
+from lemminflect import getInflection
 import language_tool_python
-from analyze_grammar import analyze_grammar
-import logging
-import os
-import shutil
-import time
+from happytransformer import HappyTextToText
+import traceback
 
-# Configure logging
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
-
-# Initialize spell checker with custom dictionary
+nlp = spacy.load("en_core_web_sm")
 spell = SpellChecker()
+tool = language_tool_python.LanguageTool('en', remote_server='http://localhost:8081')
+happy_tt = HappyTextToText("T5", "vennify/t5-base-grammar-correction")
 
-def add_custom_dictionary():
-    """Add custom words and corrections to the spell checker."""
-    # Add valid words to the dictionary
-    spell.word_frequency.load_words([
-        'groceries', 'grocery', "grocer's",
-        'bought', 'went', 'gone',
-        'windowsill', 'noise', 'homework'
-    ])
-    
-    # Remove common misspellings from the dictionary
-    spell.word_frequency.remove_words([
-        'grocerys', 'buyed', 'goed',
-        'windowsil', 'noize', 'homwork', 
-        'nite'
-    ])
-
-def initialize_language_tool(max_retries=3):
-    """Initialize LanguageTool with retries and proper error handling."""
-    for attempt in range(max_retries):
-        try:
-            return language_tool_python.LanguageToolPublicAPI('en-US')
-        except Exception as e:
-            logging.error(f"Attempt {attempt + 1} failed: {str(e)}")
-            if attempt < max_retries - 1:
-                time.sleep(1)
-            else:
-                raise RuntimeError("Failed to initialize LanguageTool after multiple attempts") from e
-
-try:
-    tool = initialize_language_tool()
-except Exception as e:
-    logging.error("Failed to initialize LanguageTool", exc_info=True)
-    tool = None  # Allow the program to continue without LanguageTool
-
-def run_spelling(text: str) -> list[dict]:
-    """Identify spelling errors in the given text."""
-    # Split text into words while preserving case
+def correct_spelling(text):
     words = re.findall(r'\b\w+\b', text)
-    suggestions = []
-    
+    corrections = []
     for word in words:
-        # Skip proper nouns (detected by capitalization in middle of sentence)
-        is_proper = not word.islower() and not word.isupper() and word != words[0]
-        
-        # Handle possessive forms
-        base_word = word.lower().rstrip("'s")
-        
-        # Check if the word (lowercase) is misspelled
-        if not is_proper and base_word not in spell and not word.isnumeric():
-            correction = spell.correction(base_word)
-            candidates = spell.candidates(base_word) or []  # Ensure candidates is not None
-            candidates = list(candidates)  # Convert to list if not empty
-            
-            # Handle plural forms
-            if word.lower().endswith('s'):
-                singular = word[:-1]
-                if singular in spell:
-                    correction = singular + 's'
-                    candidates.append(correction)
-            
-            # Add possessive forms to candidates if applicable
-            if word.endswith("'s"):
-                possessive_candidates = [c + "'s" for c in candidates]
-                candidates.extend(possessive_candidates)
-            
-            if correction and correction.lower() != word.lower():
-                # Remove duplicates and limit to top 3 suggestions
-                unique_candidates = list(dict.fromkeys(candidates))[:3]
-                suggestions.append({
-                    "type": "spelling",
-                    "original": word,
-                    "suggested": unique_candidates if unique_candidates else [correction]
+        if word.lower() not in spell:
+            suggestion = spell.correction(word)
+            if suggestion and suggestion.lower() != word.lower():
+                corrections.append({
+                    'type': 'spelling',
+                    'original': word,
+                    'suggested': suggestion
                 })
-    
-    return suggestions
+    return corrections
 
-def preprocess_text(text: str) -> str:
-    """
-    Preprocess the input text to normalize capitalization, punctuation, and spacing.
-
-    Args:
-        text (str): The input text to preprocess.
-
-    Returns:
-        str: The preprocessed text.
-    """
-    # Capitalize the first letter of each sentence and ensure proper spacing
-    sentences = re.split(r'(\.|\?|!)', text)
-    sentences = [s.strip().capitalize() + p for s, p in zip(sentences[::2], sentences[1::2]) if s]
-    preprocessed_text = ' '.join(sentences)
-
-    # Ensure proper spacing around punctuation
-    preprocessed_text = re.sub(r'\s+([?.!,])', r'\1', preprocessed_text)
-    preprocessed_text = re.sub(r'([?.!,])(?=[^\s])', r'\1 ', preprocessed_text)
-
-    return preprocessed_text
-
-def detect_common_issues(text: str) -> list[dict]:
-    """
-    Detect common grammar issues like subject-verb agreement and tense errors manually.
-
-    Args:
-        text (str): The input text to analyze.
-
-    Returns:
-        list[dict]: A list of detected issues with suggestions.
-    """
-    issues = []
-    words = text.split()
-
-    # Example: Detect "I buying" and suggest "I am buying"
-    for i, word in enumerate(words[:-1]):
-        if word.lower() == "i" and words[i + 1].endswith("ing"):
-            issues.append({
-                "type": "grammar",
-                "message": "Missing auxiliary verb (e.g., 'am').",
-                "original": f"{word} {words[i + 1]}",
-                "suggested": [f"I am {words[i + 1]}"]
-            })
-
-    return issues
-
-def run_grammar(text: str) -> list[dict]:
-    """
-    Identify grammar issues in the given text, including tense and agreement errors, and provide suggestions.
-
-    Args:
-        text (str): The input text to check for grammar issues.
-
-    Returns:
-        list[dict]: A list of suggestions for grammar corrections.
-    """
-    # Preprocess the text before grammar check
-    text = preprocess_text(text)
-    logging.debug(f"Preprocessed text for grammar check: {text}")
-
-    suggestions = []
-
-    # Use LanguageTool for grammar analysis
+def correct_grammar(text):
     try:
         matches = tool.check(text)
-        logging.debug(f"Grammar matches: {len(matches)} found")
-
-        for match in matches:
-            suggestion = {
-                "type": "grammar",
-                "message": match.message,
-                "original": text[match.offset : match.offset + match.errorLength],
-                "suggested": match.replacements if match.replacements else ["No suggestion"]
-            }
-
-            # Highlight tense and agreement issues
-            if "tense" in match.message.lower() or "agreement" in match.message.lower():
-                suggestion["highlight"] = "Tense/Agreement Issue"
-
-            logging.debug(f"Grammar suggestion: {suggestion}")
-            suggestions.append(suggestion)
-
     except Exception as e:
-        logging.error("Failed to analyze grammar using LanguageTool", exc_info=True)
-        raise RuntimeError("Failed to analyze grammar using LanguageTool") from e
+        return [{
+            'type': 'error',
+            'original': '',
+            'suggested': '',
+            'message': f'Grammar check failed: {e}'
+        }]
 
-    # Add fallback manual checks for common issues
-    manual_issues = detect_common_issues(text)
-    suggestions.extend(manual_issues)
+    corrections = []
+    sentences = list(nlp(text).sents)
 
-    # Log final suggestions for debugging
-    logging.debug(f"Final grammar suggestions: {suggestions}")
+    for match in matches:
+        offset = match.offset
+        length = match.errorLength
+        replacement = match.replacements[0] if match.replacements else None
 
-    # Fallback: Add a warning if no grammar issues are detected
-    if not suggestions:
-        logging.warning("No grammar issues detected. Consider reviewing the input text manually.")
+        if not replacement:
+            continue
 
-    return suggestions
+        original = text[offset:offset + length].strip()
+        if not original or original == replacement:
+            continue
 
-def process_grammar_suggestion(issue: str) -> dict:
-    """Process a grammar issue message into a structured suggestion."""
-    suggestion = {
-        "type": "grammar",
-        "message": issue,
-        "original": None,
-        "suggested": []
-    }
-    
-    # Extract original and suggested text from messages like "Use X instead of Y"
-    if "Use '" in issue and "' instead of '" in issue:
-        parts = issue.split("' instead of '")
-        if len(parts) == 2:
-            suggested = parts[0].split("'")[1] if "'" in parts[0] else None
-            original = parts[1].split("'")[0] if "'" in parts[1] else None
-            if suggested and original:
-                suggestion.update({
-                    "original": original.strip(),
-                    "suggested": [suggested.strip()]
+        # find which sentence the error belongs to
+        sentence_text = ""
+        for sent in sentences:
+            if sent.start_char <= offset < sent.end_char:
+                sentence_text = sent.text.strip()
+                break
+
+        corrected_sentence = sentence_text.replace(original, replacement, 1).strip()
+
+        if corrected_sentence and corrected_sentence != sentence_text:
+            corrections.append({
+                'type': 'grammar',
+                'original': sentence_text,
+                'suggested': corrected_sentence,
+                'message': match.message
+            })
+
+    return corrections
+
+
+def correct_morphology(text):
+    doc = nlp(text)
+    corrections = []
+    for token in doc:
+        if token.dep_ == "nsubj" and token.head.pos_ == "VERB":
+            verb = token.head
+            subj_num = token.morph.get("Number")
+            if not subj_num:
+                continue
+            suggested = None
+            if subj_num == ["Sing"] and token.text.lower() in ["he", "she", "it"] and verb.tag_ != "VBZ":
+                suggested = getInflection(verb.lemma_, "VBZ")
+            elif subj_num == ["Plur"] and verb.tag_ == "VBZ":
+                suggested = getInflection(verb.lemma_, "VBP")
+            if suggested and suggested[0] != verb.text:
+                corrections.append({
+                    'type': 'morphology',
+                    'original': verb.text,
+                    'suggested': suggested[0]
                 })
-    elif "instead of" in issue:
-        parts = issue.split("instead of")
-        if len(parts) == 2:
-            suggested = parts[0].split("'")[1] if "'" in parts[0] else None
-            original = parts[1].split("'")[1] if "'" in parts[1] else None
-            if suggested and original:
-                suggestion.update({
-                    "original": original.strip(),
-                    "suggested": [suggested.strip()]
-                })
-    
-    return suggestion
+    return corrections
 
-def correct_text(text: str) -> tuple[str, list[dict]]:
-    """Analyze and correct text for both spelling and grammar errors."""
-    # Initialize custom dictionary
-    add_custom_dictionary()
-    
-    all_suggestions = []
-    corrected = text
-    
-    # Run spelling check first
-    spelling_suggestions = run_spelling(text)
-    logging.debug(f"Spelling suggestions: {spelling_suggestions}")
-    all_suggestions.extend(spelling_suggestions)
-    
-    # Run grammar checks
+def correct_gpt(text):
+    result = happy_tt.generate_text("grammar: " + text)
+    corrected = result.text.strip()
+
+    if (
+        not corrected or
+        corrected.lower().strip(". ") == text.lower().strip(". ") or
+        corrected == text
+    ):
+        return []
+
+    return [{
+        'type': 'grammar',
+        'original': text,
+        'suggested': corrected,
+        'message': "T5 grammar correction"
+    }]
+
+def correct_text(text):
     try:
-        # Get grammar issues from our custom analyzer
-        grammar_issues = analyze_grammar(text)
-        logging.debug(f"Grammar issues: {grammar_issues}")
-        
-        for issue in grammar_issues.get("issues", []):
-            suggestion = process_grammar_suggestion(issue)
-            if suggestion["original"] or suggestion["message"]:
-                all_suggestions.append(suggestion)
-        
-    except Exception as e:
-        logging.error(f"Grammar check failed: {str(e)}", exc_info=True)
-    
-    # Validate suggestions to ensure they are contextually appropriate
-    validated_suggestions = []
-    for s in all_suggestions:
-        if s.get("original") and s.get("suggested"):
-            if isinstance(s["suggested"], list) and s["suggested"]:
-                validated_suggestions.append(s)
+        print("[DEBUG] Input text:", text)
+        spelling = correct_spelling(text)
+        print("[DEBUG] Spelling corrections:", spelling)
 
-    # Apply corrections more robustly, ensuring article corrections are handled
-    for s in validated_suggestions:
-        if s.get("original") and s.get("suggested"):
-            corrected = re.sub(rf"\b{s['original']}\b", s['suggested'][0], corrected)
-    
-    logging.debug(f"Found {len(all_suggestions)} total suggestions")
-    logging.debug(f"Original text: {text}")
-    logging.debug(f"Corrected text: {corrected}")
-    
-    return corrected, all_suggestions
+        try:
+            grammar = correct_grammar(text)
+        except Exception as e:
+            print("[ERROR] Grammar check failed:", e)
+            traceback.print_exc()
+            grammar = []
+
+        morphology = correct_morphology(text)
+        print("[DEBUG] Morphology corrections:", morphology)
+
+        try:
+            gpt = correct_gpt(text)
+        except Exception as e:
+            print("[ERROR] GPT correction failed:", e)
+            traceback.print_exc()
+            gpt = []
+
+        corrections = spelling + grammar + morphology + gpt
+        print("[DEBUG] Total corrections:", corrections)
+
+        corrected_text = text
+        for c in corrections:
+            o = c.get('original', '').strip()
+            s = c.get('suggested', '').strip()
+            if o and s and o != s:
+                corrected_text = re.sub(r'\b' + re.escape(o) + r'\b', s, corrected_text)
+
+        print("[DEBUG] Corrected text:", corrected_text)
+        return corrected_text, corrections
+
+    except Exception as e:
+        print("[FATAL] Unhandled error in correct_text:", e)
+        traceback.print_exc()
+        return text, []
+
